@@ -157,6 +157,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
     
+    // Set client password
+    if ($action === 'set_client_password') {
+        $id = $_POST['id'] ?? 0;
+        $password = $_POST['password'] ?? '';
+        
+        if ($id > 0 && !empty($password)) {
+            $hashed_password = password_hash($password, PASSWORD_DEFAULT);
+            $stmt = $conn->prepare("UPDATE clients SET password = ? WHERE id = ?");
+            $stmt->bind_param("si", $hashed_password, $id);
+            if ($stmt->execute()) {
+                $message = 'Password set successfully! Client can now login.';
+                $message_type = 'success';
+            }
+            $stmt->close();
+        }
+    }
+    
     // Sales CRUD
     if ($action === 'add_sale') {
         $client_id = $_POST['client_id'] ?? 0;
@@ -681,17 +698,32 @@ if (!empty($search)) {
                         <th>Name</th>
                         <th>Phone</th>
                         <th>Location</th>
+                        <th>Login Access</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php while ($row = $clients->fetch_assoc()): ?>
+                    <?php 
+                    $clients->data_seek(0);
+                    while ($row = $clients->fetch_assoc()): 
+                        $has_login = !empty($row['password']);
+                    ?>
                     <tr>
                         <td><?php echo $row['id']; ?></td>
                         <td><?php echo htmlspecialchars($row['name']); ?></td>
                         <td><?php echo htmlspecialchars($row['phone']); ?></td>
                         <td><?php echo htmlspecialchars($row['location']); ?></td>
+                        <td>
+                            <?php if ($has_login): ?>
+                                <span style="color: green; font-weight: bold;">✓ Active</span>
+                            <?php else: ?>
+                                <span style="color: #999;">Not set</span>
+                            <?php endif; ?>
+                        </td>
                         <td class="actions">
+                            <button class="btn btn-sm" onclick="showPasswordModal(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars($row['name']); ?>')">
+                                <?php echo $has_login ? 'Change Password' : 'Set Password'; ?>
+                            </button>
                             <button class="btn btn-sm" onclick="editClient(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars($row['name']); ?>', '<?php echo htmlspecialchars($row['phone']); ?>', '<?php echo htmlspecialchars($row['location']); ?>')">Edit</button>
                             <form method="POST" style="display:inline;" onsubmit="return confirm('Are you sure you want to delete this client?');">
                                 <input type="hidden" name="action" value="delete_client">
@@ -922,6 +954,28 @@ if (!empty($search)) {
         </div>
     </div>
 
+    <!-- Client Password Modal -->
+    <div id="clientPasswordModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Set Client Password</h2>
+                <span class="close" onclick="closeModal('clientPasswordModal')">&times;</span>
+            </div>
+            <form method="POST">
+                <input type="hidden" name="action" value="set_client_password">
+                <input type="hidden" name="id" id="passwordClientId" value="">
+                <p style="margin-bottom: 15px; color: #666;">
+                    Set password for client: <strong id="passwordClientName"></strong>
+                </p>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" name="password" required minlength="6" placeholder="Minimum 6 characters">
+                </div>
+                <button type="submit" class="btn">Set Password</button>
+            </form>
+        </div>
+    </div>
+
     <!-- Sale Modal -->
     <div id="saleModal" class="modal">
         <div class="modal-content">
@@ -1031,6 +1085,12 @@ if (!empty($search)) {
             document.getElementById('clientPhone').value = phone;
             document.getElementById('clientLocation').value = location;
             document.getElementById('clientModal').classList.add('active');
+        }
+
+        function showPasswordModal(id, name) {
+            document.getElementById('passwordClientId').value = id;
+            document.getElementById('passwordClientName').textContent = name;
+            document.getElementById('clientPasswordModal').classList.add('active');
         }
 
         function showSaleModal() {

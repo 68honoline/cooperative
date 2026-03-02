@@ -25,40 +25,77 @@ $error = '';
 $success = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $login_type = $_POST['login_type'] ?? 'admin';
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
 
     if (empty($username) || empty($password)) {
         $error = 'Please enter both username and password';
     } else {
-        // Validate credentials
-        $stmt = $conn->prepare("SELECT id, username, password FROM admins WHERE username = ? OR email = ?");
-        $stmt->bind_param("ss", $username, $username);
-        $stmt->execute();
-        $result = $stmt->get_result();
+        if ($login_type === 'admin') {
+            // Admin login
+            $stmt = $conn->prepare("SELECT id, username, password FROM admins WHERE username = ? OR email = ?");
+            $stmt->bind_param("ss", $username, $username);
+            $stmt->execute();
+            $result = $stmt->get_result();
 
-        if ($result->num_rows === 1) {
-            $admin = $result->fetch_assoc();
-            
-            if (password_verify($password, $admin['password'])) {
-                // Password correct - create session
-                $_SESSION['admin_id'] = $admin['id'];
-                $_SESSION['admin_username'] = $admin['username'];
-                $_SESSION['logged_in'] = true;
-                $_SESSION['login_time'] = time();
+            if ($result->num_rows === 1) {
+                $admin = $result->fetch_assoc();
                 
-                // Regenerate session ID for security
-                session_regenerate_id(true);
-                
-                header('Location: dashboard.php');
-                exit;
+                if (password_verify($password, $admin['password'])) {
+                    // Password correct - create session
+                    $_SESSION['user_id'] = $admin['id'];
+                    $_SESSION['username'] = $admin['username'];
+                    $_SESSION['user_type'] = 'admin';
+                    $_SESSION['logged_in'] = true;
+                    $_SESSION['login_time'] = time();
+                    
+                    // Regenerate session ID for security
+                    session_regenerate_id(true);
+                    
+                    header('Location: dashboard.php');
+                    exit;
+                } else {
+                    $error = 'Invalid password';
+                }
             } else {
-                $error = 'Invalid password';
+                $error = 'Invalid username or email';
             }
+            $stmt->close();
         } else {
-            $error = 'Invalid username or email';
+            // Client login
+            $stmt = $conn->prepare("SELECT id, name, password FROM clients WHERE name = ?");
+            $stmt->bind_param("s", $username);
+            $stmt->execute();
+            $result = $stmt->get_result();
+
+            if ($result->num_rows === 1) {
+                $client = $result->fetch_assoc();
+                
+                // Check if password is set
+                if (empty($client['password'])) {
+                    $error = 'Account not set up for login. Contact administrator.';
+                } elseif (password_verify($password, $client['password'])) {
+                    // Password correct - create session
+                    $_SESSION['user_id'] = $client['id'];
+                    $_SESSION['username'] = $client['name'];
+                    $_SESSION['user_type'] = 'client';
+                    $_SESSION['logged_in'] = true;
+                    $_SESSION['login_time'] = time();
+                    
+                    // Regenerate session ID for security
+                    session_regenerate_id(true);
+                    
+                    header('Location: client_dashboard.php');
+                    exit;
+                } else {
+                    $error = 'Invalid password';
+                }
+            } else {
+                $error = 'Invalid client name';
+            }
+            $stmt->close();
         }
-        $stmt->close();
     }
 }
 ?>
@@ -108,6 +145,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .login-header p {
             color: #666;
             font-size: 14px;
+        }
+
+        .login-type {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .login-type label {
+            flex: 1;
+            padding: 10px;
+            text-align: center;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .login-type input[type="radio"] {
+            display: none;
+        }
+
+        .login-type input[type="radio"]:checked + label {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
         }
 
         .form-group {
@@ -187,8 +250,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php endif; ?>
 
         <form method="POST" action="">
+            <div class="login-type">
+                <input type="radio" id="admin" name="login_type" value="admin" checked>
+                <label for="admin">Admin Login</label>
+                
+                <input type="radio" id="client" name="login_type" value="client">
+                <label for="client">Client Login</label>
+            </div>
+
             <div class="form-group">
-                <label for="username">Username or Email</label>
+                <label for="username" id="usernameLabel">Username or Email</label>
                 <input type="text" id="username" name="username" required autocomplete="username">
             </div>
 
@@ -201,10 +272,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </form>
 
         <div class="default-credentials">
-            <strong>Default Login:</strong><br>
+            <strong>Admin Default Login:</strong><br>
             Username: admin<br>
-            Password: admin123
+            Password: admin123<br><br>
+            <strong>Note:</strong> Clients need to be set up by admin with a password to login.
         </div>
     </div>
+
+    <script>
+        const adminRadio = document.getElementById('admin');
+        const clientRadio = document.getElementById('client');
+        const usernameLabel = document.getElementById('usernameLabel');
+        const usernameInput = document.getElementById('username');
+
+        adminRadio.addEventListener('change', function() {
+            usernameLabel.textContent = 'Username or Email';
+            usernameInput.placeholder = '';
+        });
+
+        clientRadio.addEventListener('change', function() {
+            usernameLabel.textContent = 'Client Name';
+            usernameInput.placeholder = 'Enter your company/client name';
+        });
+    </script>
 </body>
 </html>
